@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { onAuthStateChanged, type User } from 'firebase/auth';
+import { onIdTokenChanged, type User } from 'firebase/auth';
 import {
   collection,
   deleteDoc,
@@ -47,9 +47,9 @@ export function usePortfolioStore() {
   const [adminEmails, setAdminEmails] = useState<AdminUserRecord[]>([]);
   const [syncing, setSyncing] = useState(false);
 
-  // Track auth state and admin status
+  // Track auth state, token refreshes (e.g. emailVerified), and admin status
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (currentUser) => {
+    const unsub = onIdTokenChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (!currentUser || !currentUser.emailVerified || !currentUser.email) {
         setIsAdmin(false);

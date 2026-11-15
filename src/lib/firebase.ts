@@ -2,6 +2,8 @@ import { initializeApp } from 'firebase/app';
 import {
   getAuth,
   GoogleAuthProvider,
+  sendEmailVerification,
+  signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
 } from 'firebase/auth';
@@ -85,6 +87,22 @@ void testConnection();
 
 export async function signInWithGooglePopup() {
   return signInWithPopup(auth, googleProvider);
+}
+
+export async function signInWithEmailPassword(email: string, password: string) {
+  return signInWithEmailAndPassword(auth, email.trim(), password);
+}
+
+export async function sendAdminVerificationEmail() {
+  if (!auth.currentUser) throw new Error('No signed-in user');
+  return sendEmailVerification(auth.currentUser);
+}
+
+export async function refreshAdminSession() {
+  if (!auth.currentUser) return null;
+  await auth.currentUser.reload();
+  await auth.currentUser.getIdToken(true);
+  return auth.currentUser;
 }
 
 export async function signOutAdmin() {

@@ -6,9 +6,12 @@ import {
   Edit3,
   Film,
   Instagram,
+  KeyRound,
   LogIn,
   LogOut,
+  Mail,
   Plus,
+  RefreshCw,
   ShieldCheck,
   Star,
   Trash2,
@@ -21,6 +24,9 @@ import type { User } from 'firebase/auth';
 import {
   BOOTSTRAPPED_ADMIN_EMAIL,
   compressImageToDataUrl,
+  refreshAdminSession,
+  sendAdminVerificationEmail,
+  signInWithEmailPassword,
   signInWithGooglePopup,
   signOutAdmin,
 } from '../lib/firebase';
@@ -133,6 +139,11 @@ export function AdminDashboard({
     message: string;
     domain?: string;
   } | null>(null);
+  const [authMethod, setAuthMethod] = useState<'google' | 'password'>('google');
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+  const [verificationSent, setVerificationSent] = useState(false);
 
   const [profileForm, setProfileForm] = useState<StudioProfile>(profile);
   const [newAdminEmail, setNewAdminEmail] = useState('');
@@ -146,70 +157,157 @@ export function AdminDashboard({
     setTimeout(() => setToast(''), 3500);
   };
 
-  const handleLogin = async () => {
-    setAuthError(null);
-    try {
-      await signInWithGooglePopup();
-    } catch (err) {
-      const code =
-        typeof err === 'object' && err !== null && 'code' in err
-          ? String((err as { code?: unknown }).code || '')
-          : '';
-      const rawMessage = err instanceof Error ? err.message : '';
-      const currentHost =
-        typeof window !== 'undefined' ? window.location.hostname : '';
+  const handleAuthException = (err: unknown) => {
+    const code =
+      typeof err === 'object' && err !== null && 'code' in err
+        ? String((err as { code?: unknown }).code || '')
+        : '';
+    const rawMessage = err instanceof Error ? err.message : '';
+    const currentHost =
+      typeof window !== 'undefined' ? window.location.hostname : '';
 
-      if (
-        code === 'auth/unauthorized-domain' ||
-        rawMessage.includes('auth/unauthorized-domain')
-      ) {
-        setAuthError({
-          code: 'auth/unauthorized-domain',
-          domain: currentHost,
-          message:
-            lang === 'ar'
-              ? `هذا الدومين (${currentHost}) غير مضاف بعد في قائمة الدومينات المصرح بها داخل Firebase Authentication.`
-              : `This domain (${currentHost}) is not yet listed under Firebase Authentication → Authorized domains.`,
-        });
-        return;
-      }
+    if (
+      code === 'auth/unauthorized-domain' ||
+      rawMessage.includes('auth/unauthorized-domain')
+    ) {
+      setAuthError({
+        code: 'auth/unauthorized-domain',
+        domain: currentHost,
+        message:
+          lang === 'ar'
+            ? `هذا الدومين (${currentHost}) غير مضاف بعد في قائمة الدومينات المصرح بها داخل Firebase Authentication.`
+            : `This domain (${currentHost}) is not yet listed under Firebase Authentication → Authorized domains.`,
+      });
+      return;
+    }
 
-      if (
-        code === 'auth/popup-blocked' ||
-        rawMessage.includes('auth/popup-blocked')
-      ) {
-        setAuthError({
-          code: 'auth/popup-blocked',
-          message:
-            lang === 'ar'
-              ? 'المتصفح منع نافذة تسجيل الدخول المنبثقة. يرجى السماح بالنوافذ المنبثقة (Pop-ups) في إعدادات Safari أو المتصفح ثم المحاولة مرة أخرى.'
-              : 'Your browser blocked the Google sign-in popup. Please allow pop-ups in browser settings and try again.',
-        });
-        return;
-      }
+    if (
+      code === 'auth/operation-not-allowed' ||
+      rawMessage.includes('auth/operation-not-allowed')
+    ) {
+      setAuthError({
+        code: 'auth/operation-not-allowed',
+        message:
+          lang === 'ar'
+            ? 'تسجيل الدخول بالبريد وكلمة المرور غير مفعّل بعد في مشروع Firebase.'
+            : 'Email/Password sign-in provider is not yet enabled in Firebase Authentication.',
+      });
+      return;
+    }
 
-      if (
-        code === 'auth/popup-closed-by-user' ||
-        code === 'auth/cancelled-popup-request'
-      ) {
-        setAuthError({
-          code,
-          message:
-            lang === 'ar'
-              ? 'تم إغلاق نافذة تسجيل الدخول قبل إتمام العملية. اضغطي على الزر للمحاولة مجدداً.'
-              : 'Sign-in window was closed before completing. Click the button to try again.',
-        });
-        return;
-      }
-
+    if (
+      code === 'auth/invalid-credential' ||
+      code === 'auth/wrong-password' ||
+      code === 'auth/user-not-found' ||
+      code === 'auth/invalid-email'
+    ) {
       setAuthError({
         code,
         message:
-          rawMessage ||
-          (lang === 'ar'
-            ? 'تعذر تسجيل الدخول عبر جوجل.'
-            : 'Google Sign-In failed.'),
+          lang === 'ar'
+            ? 'البريد الإلكتروني أو كلمة المرور غير صحيحة، أو لم يتم إنشاء الحساب بعد في Firebase Authentication.'
+            : 'Invalid email or password, or account not yet created in Firebase Authentication.',
       });
+      return;
+    }
+
+    if (code === 'auth/too-many-requests') {
+      setAuthError({
+        code,
+        message:
+          lang === 'ar'
+            ? 'محاولات دخول متكررة. يرجى الانتظار قليلاً ثم المحاولة مجدداً.'
+            : 'Too many failed attempts. Please wait a moment and try again.',
+      });
+      return;
+    }
+
+    if (
+      code === 'auth/popup-blocked' ||
+      rawMessage.includes('auth/popup-blocked')
+    ) {
+      setAuthError({
+        code: 'auth/popup-blocked',
+        message:
+          lang === 'ar'
+            ? 'المتصفح منع نافذة تسجيل الدخول المنبثقة. يرجى السماح بالنوافذ المنبثقة (Pop-ups) في إعدادات Safari أو المتصفح ثم المحاولة مرة أخرى.'
+            : 'Your browser blocked the Google sign-in popup. Please allow pop-ups in browser settings and try again.',
+      });
+      return;
+    }
+
+    if (
+      code === 'auth/popup-closed-by-user' ||
+      code === 'auth/cancelled-popup-request'
+    ) {
+      setAuthError({
+        code,
+        message:
+          lang === 'ar'
+            ? 'تم إغلاق نافذة تسجيل الدخول قبل إتمام العملية. اضغطي على الزر للمحاولة مجدداً.'
+            : 'Sign-in window was closed before completing. Click the button to try again.',
+      });
+      return;
+    }
+
+    setAuthError({
+      code,
+      message:
+        rawMessage ||
+        (lang === 'ar'
+          ? 'تعذر تسجيل الدخول.'
+          : 'Sign-In failed.'),
+    });
+  };
+
+  const handleLogin = async () => {
+    setAuthError(null);
+    setAuthLoading(true);
+    try {
+      await signInWithGooglePopup();
+    } catch (err) {
+      handleAuthException(err);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleEmailPasswordLogin = async (e: FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    if (!loginEmail.trim() || !loginPassword) return;
+    setAuthLoading(true);
+    try {
+      await signInWithEmailPassword(loginEmail, loginPassword);
+    } catch (err) {
+      handleAuthException(err);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    setAuthError(null);
+    setAuthLoading(true);
+    try {
+      await sendAdminVerificationEmail();
+      setVerificationSent(true);
+    } catch (err) {
+      handleAuthException(err);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleRefreshVerification = async () => {
+    setAuthError(null);
+    setAuthLoading(true);
+    try {
+      await refreshAdminSession();
+    } catch (err) {
+      handleAuthException(err);
+    } finally {
+      setAuthLoading(false);
     }
   };
 
@@ -408,7 +506,52 @@ export function AdminDashboard({
             </p>
           </div>
 
-          {user && !isAdmin ? (
+          {user && !user.emailVerified ? (
+            <div className="p-4 rounded-xl bg-zinc-900 border border-amber-500/30 space-y-3">
+              <p className="text-xs text-amber-300 font-medium leading-relaxed">
+                {lang === 'ar'
+                  ? `البريد (${user.email}) غير مفعّل بعد في Firebase. يرجى تفعيله لحماية قاعدة البيانات.`
+                  : `Your email (${user.email}) is not yet verified in Firebase.`}
+              </p>
+              {verificationSent && (
+                <p className="text-xs text-emerald-400">
+                  {lang === 'ar'
+                    ? 'تم إرسال رابط التفعيل إلى بريدك الإلكتروني. افتحيه ثم اضغطي "تم التفعيل".'
+                    : 'Verification link sent to your inbox. Open it then click Verify Status.'}
+                </p>
+              )}
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={authLoading}
+                  onClick={handleResendVerification}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold bg-[#E5B84B] text-[#050505] rounded-lg hover:bg-[#f0c762] cursor-pointer"
+                >
+                  <Mail className="w-3.5 h-3.5" />
+                  <span>
+                    {lang === 'ar' ? 'إرسال رابط التفعيل' : 'Send Verification Email'}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  disabled={authLoading}
+                  onClick={handleRefreshVerification}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium bg-zinc-800 text-zinc-100 rounded-lg hover:bg-zinc-700 cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>{lang === 'ar' ? 'تم التفعيل — دخول' : 'I Verified — Refresh'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={signOutAdmin}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium bg-zinc-950 border border-zinc-800 text-zinc-300 rounded-lg hover:text-rose-400 cursor-pointer"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>{lang === 'ar' ? 'خروج' : 'Sign Out'}</span>
+                </button>
+              </div>
+            </div>
+          ) : user && !isAdmin ? (
             <div className="p-4 rounded-xl bg-zinc-900 border border-amber-500/30 space-y-3">
               <p className="text-xs text-amber-300 font-medium">
                 {lang === 'ar'
@@ -430,16 +573,99 @@ export function AdminDashboard({
               </button>
             </div>
           ) : (
-            <button
-              type="button"
-              onClick={handleLogin}
-              className="w-full inline-flex items-center justify-center gap-3 px-6 py-3.5 text-sm font-semibold bg-[#E5B84B] text-[#050505] rounded-xl hover:bg-[#f0c762] transition-colors cursor-pointer"
-            >
-              <LogIn className="w-4 h-4" />
-              <span>
-                {lang === 'ar' ? 'تسجيل الدخول عبر Google' : 'Sign In with Google'}
-              </span>
-            </button>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-zinc-900 border border-zinc-800">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMethod('google');
+                    setAuthError(null);
+                  }}
+                  className={`py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
+                    authMethod === 'google'
+                      ? 'bg-[#E5B84B] text-[#050505]'
+                      : 'text-zinc-400 hover:text-zinc-100'
+                  }`}
+                >
+                  {lang === 'ar' ? 'حساب Google' : 'Google Account'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMethod('password');
+                    setAuthError(null);
+                  }}
+                  className={`py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
+                    authMethod === 'password'
+                      ? 'bg-[#E5B84B] text-[#050505]'
+                      : 'text-zinc-400 hover:text-zinc-100'
+                  }`}
+                >
+                  {lang === 'ar' ? 'البريد وكلمة المرور' : 'Email & Password'}
+                </button>
+              </div>
+
+              {authMethod === 'google' ? (
+                <button
+                  type="button"
+                  disabled={authLoading}
+                  onClick={handleLogin}
+                  className="w-full inline-flex items-center justify-center gap-3 px-6 py-3.5 text-sm font-semibold bg-[#E5B84B] text-[#050505] rounded-xl hover:bg-[#f0c762] transition-colors cursor-pointer disabled:opacity-60"
+                >
+                  <LogIn className="w-4 h-4" />
+                  <span>
+                    {lang === 'ar' ? 'تسجيل الدخول عبر Google' : 'Sign In with Google'}
+                  </span>
+                </button>
+              ) : (
+                <form onSubmit={handleEmailPasswordLogin} className="space-y-3">
+                  <div>
+                    <label className="block text-xs text-zinc-400 mb-1.5">
+                      {lang === 'ar' ? 'البريد الإلكتروني للأدمن' : 'Admin Email'}
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      dir="ltr"
+                      value={loginEmail}
+                      onChange={(e) => setLoginEmail(e.target.value)}
+                      placeholder="name@example.com"
+                      className="w-full px-3.5 py-2.5 text-sm bg-zinc-900 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-[#E5B84B]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-zinc-400 mb-1.5">
+                      {lang === 'ar' ? 'كلمة المرور' : 'Password'}
+                    </label>
+                    <input
+                      type="password"
+                      required
+                      dir="ltr"
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
+                      placeholder="••••••"
+                      className="w-full px-3.5 py-2.5 text-sm bg-zinc-900 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-[#E5B84B]"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={authLoading}
+                    className="w-full inline-flex items-center justify-center gap-2.5 px-6 py-3.5 text-sm font-semibold bg-[#E5B84B] text-[#050505] rounded-xl hover:bg-[#f0c762] transition-colors cursor-pointer disabled:opacity-60"
+                  >
+                    <KeyRound className="w-4 h-4" />
+                    <span>
+                      {authLoading
+                        ? lang === 'ar'
+                          ? 'جاري تسجيل الدخول...'
+                          : 'Signing in...'
+                        : lang === 'ar'
+                          ? 'دخول إلى لوحة الأدمن'
+                          : 'Sign In to Admin'}
+                    </span>
+                  </button>
+                </form>
+              )}
+            </div>
           )}
 
           {authError && (
@@ -472,6 +698,25 @@ export function AdminDashboard({
                       {authError.domain}
                     </code>
                   )}
+                </div>
+              )}
+              {authError.code === 'auth/operation-not-allowed' && (
+                <div className="space-y-1.5 text-zinc-400 leading-relaxed pt-1 border-t border-zinc-800">
+                  <p>
+                    {lang === 'ar'
+                      ? 'لتفعيل الدخول بالبريد وكلمة المرور:'
+                      : 'To enable Email & Password login:'}
+                  </p>
+                  <p>
+                    {lang === 'ar'
+                      ? '١) افتح Firebase Console ← Authentication ← Sign-in method'
+                      : '1) Open Firebase Console → Authentication → Sign-in method'}
+                  </p>
+                  <p>
+                    {lang === 'ar'
+                      ? '٢) فعّل Email/Password ثم أنشئ المستخدم من تبويب Users'
+                      : '2) Enable Email/Password and add your user in the Users tab'}
+                  </p>
                 </div>
               )}
             </div>
