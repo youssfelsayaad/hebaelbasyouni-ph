@@ -1,0 +1,203 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidEmailId(id) {
+      return id is string && id.size() >= 3 && id.size() <= 200 && id.matches('^[^/\\s@]+@[^/\\s@]+\\.[^/\\s@]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isVerifiedUser() && (
+        request.auth.token.email == 'youssfelsayaad@gmail.com'
+        || exists(/databases/$(database)/documents/adminEmails/$(request.auth.token.email))
+      );
+    }
+
+    function isValidSession(data) {
+      return data.keys().hasAll([
+          'id', 'titleAr', 'titleEn', 'mediaType', 'category',
+          'coverImage', 'galleryImages', 'videoUrl', 'duration',
+          'locationAr', 'locationEn', 'sessionDate', 'storyAr', 'storyEn',
+          'cameraSpecs', 'instagramPostUrl', 'aspectRatio', 'featured',
+          'orderIndex', 'authorUid', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'titleAr', 'titleEn', 'mediaType', 'category',
+          'coverImage', 'galleryImages', 'videoUrl', 'duration',
+          'locationAr', 'locationEn', 'sessionDate', 'storyAr', 'storyEn',
+          'cameraSpecs', 'instagramPostUrl', 'aspectRatio', 'featured',
+          'orderIndex', 'authorUid', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && data.titleAr is string && data.titleAr.size() >= 1 && data.titleAr.size() <= 140
+        && data.titleEn is string && data.titleEn.size() >= 1 && data.titleEn.size() <= 140
+        && data.mediaType in ['photo', 'video']
+        && data.category in ['weddings', 'bridal', 'editorial', 'family', 'reels']
+        && data.coverImage is string && data.coverImage.size() >= 1 && data.coverImage.size() <= 600000
+        && data.galleryImages is list && data.galleryImages.size() <= 10
+        && (data.galleryImages.size() == 0 || (data.galleryImages[0] is string && data.galleryImages[0].size() <= 600000))
+        && data.videoUrl is string && data.videoUrl.size() <= 1000
+        && data.duration is string && data.duration.size() <= 24
+        && data.locationAr is string && data.locationAr.size() >= 1 && data.locationAr.size() <= 100
+        && data.locationEn is string && data.locationEn.size() >= 1 && data.locationEn.size() <= 100
+        && data.sessionDate is string && data.sessionDate.size() >= 1 && data.sessionDate.size() <= 32
+        && data.storyAr is string && data.storyAr.size() >= 1 && data.storyAr.size() <= 1000
+        && data.storyEn is string && data.storyEn.size() >= 1 && data.storyEn.size() <= 1000
+        && data.cameraSpecs is string && data.cameraSpecs.size() <= 120
+        && data.instagramPostUrl is string && data.instagramPostUrl.size() <= 400
+        && data.aspectRatio in ['portrait', 'landscape', 'wide']
+        && data.featured is bool
+        && data.orderIndex is number && data.orderIndex >= 0 && data.orderIndex <= 100000
+        && data.authorUid is string && data.authorUid.size() >= 1 && data.authorUid.size() <= 128
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidStudioProfile(data) {
+      return data.keys().hasAll([
+          'nameAr', 'nameEn', 'handle', 'taglineAr', 'taglineEn',
+          'bioAr', 'bioEn', 'studioPhone', 'instagramUrl', 'facebookUrl',
+          'studioCityAr', 'studioCityEn', 'heroImageUrl', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'nameAr', 'nameEn', 'handle', 'taglineAr', 'taglineEn',
+          'bioAr', 'bioEn', 'studioPhone', 'instagramUrl', 'facebookUrl',
+          'studioCityAr', 'studioCityEn', 'heroImageUrl', 'updatedAt'
+        ])
+        && data.nameAr is string && data.nameAr.size() >= 1 && data.nameAr.size() <= 100
+        && data.nameEn is string && data.nameEn.size() >= 1 && data.nameEn.size() <= 100
+        && data.handle is string && data.handle.size() >= 1 && data.handle.size() <= 60
+        && data.taglineAr is string && data.taglineAr.size() >= 1 && data.taglineAr.size() <= 200
+        && data.taglineEn is string && data.taglineEn.size() >= 1 && data.taglineEn.size() <= 200
+        && data.bioAr is string && data.bioAr.size() >= 1 && data.bioAr.size() <= 1200
+        && data.bioEn is string && data.bioEn.size() >= 1 && data.bioEn.size() <= 1200
+        && data.studioPhone is string && data.studioPhone.size() <= 40
+        && data.instagramUrl is string && data.instagramUrl.size() >= 1 && data.instagramUrl.size() <= 300
+        && data.facebookUrl is string && data.facebookUrl.size() <= 300
+        && data.studioCityAr is string && data.studioCityAr.size() >= 1 && data.studioCityAr.size() <= 80
+        && data.studioCityEn is string && data.studioCityEn.size() >= 1 && data.studioCityEn.size() <= 80
+        && data.heroImageUrl is string && data.heroImageUrl.size() >= 1 && data.heroImageUrl.size() <= 600000
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAdminUser(data) {
+      return data.keys().hasAll(['email', 'addedBy', 'createdAt'])
+        && data.keys().hasOnly(['email', 'addedBy', 'createdAt'])
+        && isValidEmailId(data.email)
+        && data.addedBy is string && data.addedBy.size() >= 1 && data.addedBy.size() <= 128
+        && data.createdAt is timestamp;
+    }
+
+    function isValidBookingInquiry(data) {
+      return data.keys().hasAll(['clientName', 'clientPhone', 'sessionType', 'preferredDate', 'notes', 'status', 'createdAt'])
+        && data.keys().hasOnly(['clientName', 'clientPhone', 'sessionType', 'preferredDate', 'notes', 'status', 'createdAt'])
+        && data.clientName is string && data.clientName.size() >= 1 && data.clientName.size() <= 100
+        && data.clientPhone is string && data.clientPhone.size() >= 4 && data.clientPhone.size() <= 40
+        && data.sessionType is string && data.sessionType.size() >= 1 && data.sessionType.size() <= 60
+        && data.preferredDate is string && data.preferredDate.size() <= 40
+        && data.notes is string && data.notes.size() <= 800
+        && data.status in ['new', 'contacted', 'booked', 'archived']
+        && data.createdAt is timestamp;
+    }
+
+    match /sessions/{sessionId} {
+      allow get: if isValidId(sessionId);
+      allow list: if true;
+      allow create: if isValidId(sessionId)
+        && isAdmin()
+        && isValidSession(incoming())
+        && incoming().id == sessionId
+        && incoming().authorUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(sessionId)
+        && isAdmin()
+        && isValidSession(incoming())
+        && incoming().id == existing().id
+        && incoming().authorUid == existing().authorUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'titleAr', 'titleEn', 'mediaType', 'category',
+          'coverImage', 'galleryImages', 'videoUrl', 'duration',
+          'locationAr', 'locationEn', 'sessionDate', 'storyAr', 'storyEn',
+          'cameraSpecs', 'instagramPostUrl', 'aspectRatio', 'featured',
+          'orderIndex', 'updatedAt'
+        ]);
+      allow delete: if isValidId(sessionId) && isAdmin();
+    }
+
+    match /siteSettings/{settingId} {
+      allow get: if isValidId(settingId);
+      allow list: if false;
+      allow create: if isValidId(settingId)
+        && settingId == 'profile'
+        && isAdmin()
+        && isValidStudioProfile(incoming())
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(settingId)
+        && settingId == 'profile'
+        && isAdmin()
+        && isValidStudioProfile(incoming())
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'nameAr', 'nameEn', 'handle', 'taglineAr', 'taglineEn',
+          'bioAr', 'bioEn', 'studioPhone', 'instagramUrl', 'facebookUrl',
+          'studioCityAr', 'studioCityEn', 'heroImageUrl', 'updatedAt'
+        ]);
+      allow delete: if false;
+    }
+
+    match /adminEmails/{emailId} {
+      allow get: if isValidEmailId(emailId) && isAdmin();
+      allow list: if isAdmin();
+      allow create: if isValidEmailId(emailId)
+        && isAdmin()
+        && isValidAdminUser(incoming())
+        && incoming().email == emailId
+        && incoming().addedBy == request.auth.uid
+        && incoming().createdAt == request.time;
+      allow update: if false;
+      allow delete: if isValidEmailId(emailId) && isAdmin();
+    }
+
+    match /bookingInquiries/{inquiryId} {
+      allow get: if isValidId(inquiryId) && isAdmin();
+      allow list: if isAdmin();
+      allow create: if isValidId(inquiryId)
+        && isValidBookingInquiry(incoming())
+        && incoming().status == 'new'
+        && incoming().createdAt == request.time;
+      allow update: if isValidId(inquiryId)
+        && isAdmin()
+        && isValidBookingInquiry(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status']);
+      allow delete: if isValidId(inquiryId) && isAdmin();
+    }
+  }
+}

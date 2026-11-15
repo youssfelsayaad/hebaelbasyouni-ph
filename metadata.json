@@ -1,6 +1,6 @@
 {
-  "name": "",
-  "description": "",
+  "name": "Heba El-Basyouni Photography",
+  "description": "Portfolio and booking showcase for photographer and filmmaker Heba El-Basyouni (@hebaelbasyouni1), featuring balanced photo sessions, cinema video reels, and an interactive admin studio.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
