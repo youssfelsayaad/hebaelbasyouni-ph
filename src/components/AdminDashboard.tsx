@@ -128,7 +128,11 @@ export function AdminDashboard({
   const [bulkCategory, setBulkCategory] = useState<SessionCategory>('weddings');
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
-  const [authError, setAuthError] = useState('');
+  const [authError, setAuthError] = useState<{
+    code?: string;
+    message: string;
+    domain?: string;
+  } | null>(null);
 
   const [profileForm, setProfileForm] = useState<StudioProfile>(profile);
   const [newAdminEmail, setNewAdminEmail] = useState('');
@@ -143,17 +147,69 @@ export function AdminDashboard({
   };
 
   const handleLogin = async () => {
-    setAuthError('');
+    setAuthError(null);
     try {
       await signInWithGooglePopup();
     } catch (err) {
-      setAuthError(
-        err instanceof Error
-          ? err.message
-          : lang === 'ar'
+      const code =
+        typeof err === 'object' && err !== null && 'code' in err
+          ? String((err as { code?: unknown }).code || '')
+          : '';
+      const rawMessage = err instanceof Error ? err.message : '';
+      const currentHost =
+        typeof window !== 'undefined' ? window.location.hostname : '';
+
+      if (
+        code === 'auth/unauthorized-domain' ||
+        rawMessage.includes('auth/unauthorized-domain')
+      ) {
+        setAuthError({
+          code: 'auth/unauthorized-domain',
+          domain: currentHost,
+          message:
+            lang === 'ar'
+              ? `هذا الدومين (${currentHost}) غير مضاف بعد في قائمة الدومينات المصرح بها داخل Firebase Authentication.`
+              : `This domain (${currentHost}) is not yet listed under Firebase Authentication → Authorized domains.`,
+        });
+        return;
+      }
+
+      if (
+        code === 'auth/popup-blocked' ||
+        rawMessage.includes('auth/popup-blocked')
+      ) {
+        setAuthError({
+          code: 'auth/popup-blocked',
+          message:
+            lang === 'ar'
+              ? 'المتصفح منع نافذة تسجيل الدخول المنبثقة. يرجى السماح بالنوافذ المنبثقة (Pop-ups) في إعدادات Safari أو المتصفح ثم المحاولة مرة أخرى.'
+              : 'Your browser blocked the Google sign-in popup. Please allow pop-ups in browser settings and try again.',
+        });
+        return;
+      }
+
+      if (
+        code === 'auth/popup-closed-by-user' ||
+        code === 'auth/cancelled-popup-request'
+      ) {
+        setAuthError({
+          code,
+          message:
+            lang === 'ar'
+              ? 'تم إغلاق نافذة تسجيل الدخول قبل إتمام العملية. اضغطي على الزر للمحاولة مجدداً.'
+              : 'Sign-in window was closed before completing. Click the button to try again.',
+        });
+        return;
+      }
+
+      setAuthError({
+        code,
+        message:
+          rawMessage ||
+          (lang === 'ar'
             ? 'تعذر تسجيل الدخول عبر جوجل.'
-            : 'Google Sign-In failed.'
-      );
+            : 'Google Sign-In failed.'),
+      });
     }
   };
 
@@ -347,8 +403,8 @@ export function AdminDashboard({
             </h1>
             <p className="text-sm text-zinc-400 mt-2 leading-relaxed">
               {lang === 'ar'
-                ? 'سجّلي الدخول بحساب جوجل لإضافة بوستات وريلز إنستجرام الحقيقية، رفع الصورة الرئيسية والسيشنات، وتعديل رقم الهاتف وروابط السوشيال.'
-                : 'Sign in with Google to import real Instagram posts & reels, upload sessions, swap the hero photo, and update contacts.'}
+                ? 'سجّلي الدخول بحساب جوجل لإضافة بوستات وريلز فيسبوك وإنستجرام الحقيقية، رفع الصورة الرئيسية والسيشنات، وتعديل رقم الهاتف وروابط السوشيال.'
+                : 'Sign in with Google to import real Facebook & Instagram posts & reels, upload sessions, swap the hero photo, and update contacts.'}
             </p>
           </div>
 
@@ -386,7 +442,40 @@ export function AdminDashboard({
             </button>
           )}
 
-          {authError && <p className="text-xs text-rose-400">{authError}</p>}
+          {authError && (
+            <div className="p-4 rounded-xl bg-zinc-900 border border-rose-500/40 space-y-2.5 text-xs">
+              <p className="text-rose-300 font-medium leading-relaxed">
+                {authError.message}
+              </p>
+              {authError.code === 'auth/unauthorized-domain' && (
+                <div className="space-y-1.5 text-zinc-400 leading-relaxed pt-1 border-t border-zinc-800">
+                  <p>
+                    {lang === 'ar'
+                      ? 'لحل المشكلة على دومين النشر:'
+                      : 'To authorize this deployment domain:'}
+                  </p>
+                  <p>
+                    {lang === 'ar'
+                      ? '١) افتح Firebase Console ← Authentication ← Settings ← Authorized domains'
+                      : '1) Open Firebase Console → Authentication → Settings → Authorized domains'}
+                  </p>
+                  <p>
+                    {lang === 'ar'
+                      ? '٢) اضغط Add domain وأضف الدومين التالي:'
+                      : '2) Click Add domain and add:'}
+                  </p>
+                  {authError.domain && (
+                    <code
+                      dir="ltr"
+                      className="block px-3 py-1.5 rounded-lg bg-zinc-950 border border-zinc-800 font-mono-tech text-[#E5B84B] select-all"
+                    >
+                      {authError.domain}
+                    </code>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </motion.div>
       </section>
     );
