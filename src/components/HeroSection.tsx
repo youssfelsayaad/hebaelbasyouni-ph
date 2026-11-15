@@ -1,5 +1,14 @@
 import { useRef } from 'react';
-import { ArrowDownLeft, ArrowDownRight, Camera, Film, Instagram, Phone, Upload } from 'lucide-react';
+import {
+  ArrowDownLeft,
+  ArrowDownRight,
+  Camera,
+  ExternalLink,
+  Film,
+  Instagram,
+  Phone,
+  Upload,
+} from 'lucide-react';
 import { motion, useScroll, useTransform } from 'motion/react';
 import type { Language, StudioProfile } from '../types/portfolio';
 
@@ -16,6 +25,7 @@ interface HeroSectionProps {
   };
   isAdmin: boolean;
   onQuickUploadHero?: (file: File) => void;
+  onOpenAdmin: () => void;
   onExploreGallery: () => void;
   onExploreReels: () => void;
 }
@@ -27,6 +37,7 @@ export function HeroSection({
   balanceStats,
   isAdmin,
   onQuickUploadHero,
+  onOpenAdmin,
   onExploreGallery,
   onExploreReels,
 }: HeroSectionProps) {
@@ -37,8 +48,8 @@ export function HeroSection({
   });
 
   const imageY = useTransform(scrollYProgress, [0, 1], [0, 64]);
-  const imageScale = useTransform(scrollYProgress, [0, 1], [1.03, 1.12]);
-  const frameOpacity = useTransform(scrollYProgress, [0, 0.85], [1, 0.72]);
+  const imageScale = useTransform(scrollYProgress, [0, 1], [1.02, 1.1]);
+  const frameOpacity = useTransform(scrollYProgress, [0, 0.85], [1, 0.75]);
 
   const cleanPhone = profile.studioPhone.replace(/[^\d+]/g, '');
   const ArrowIcon = lang === 'ar' ? ArrowDownLeft : ArrowDownRight;
@@ -54,7 +65,6 @@ export function HeroSection({
           {/* Typographic Editorial Column */}
           <div className="lg:col-span-6 flex flex-col justify-between gap-8">
             <div className="space-y-6">
-              {/* Unboxed Metadata Kicker + Language Switch */}
               <motion.div
                 initial={{ opacity: 0, y: 14 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -93,7 +103,6 @@ export function HeroSection({
                 </div>
               </motion.div>
 
-              {/* Oversized Masked Headline */}
               <div className="overflow-hidden">
                 <motion.h1
                   initial={{ opacity: 0, y: 40 }}
@@ -103,14 +112,14 @@ export function HeroSection({
                 >
                   {lang === 'ar' ? (
                     <>
-                      هبة البسيوني
+                      {profile.nameAr}
                       <span className="block text-[#E5B84B] mt-2 text-[clamp(1.65rem,3vw,2.65rem)] font-normal">
                         حكايات بالضوء والحركة السينمائية
                       </span>
                     </>
                   ) : (
                     <>
-                      Heba El-Basyouni
+                      {profile.nameEn}
                       <span className="block text-[#E5B84B] italic mt-2 text-[clamp(1.65rem,3vw,2.65rem)] font-normal">
                         Editorial Stills &amp; Cinema Reels
                       </span>
@@ -129,7 +138,6 @@ export function HeroSection({
               </motion.p>
             </div>
 
-            {/* Action & Direct Social Links */}
             <motion.div
               initial={{ opacity: 0, y: 18 }}
               animate={{ opacity: 1, y: 0 }}
@@ -144,8 +152,12 @@ export function HeroSection({
                 >
                   <span>
                     {lang === 'ar'
-                      ? `استكشف الأعمال (${balanceStats.total})`
-                      : `Explore Works (${balanceStats.total})`}
+                      ? balanceStats.total > 0
+                        ? `استكشف الأعمال (${balanceStats.total})`
+                        : 'معرض الأعمال'
+                      : balanceStats.total > 0
+                        ? `Explore Works (${balanceStats.total})`
+                        : 'View Portfolio'}
                   </span>
                   <ArrowIcon className="w-4 h-4" />
                 </button>
@@ -160,7 +172,6 @@ export function HeroSection({
                 </button>
               </div>
 
-              {/* Clean Direct Social & Phone Links */}
               <div className="flex flex-wrap items-center gap-5 pt-2 text-sm text-zinc-400">
                 <a
                   href={profile.instagramUrl}
@@ -199,7 +210,7 @@ export function HeroSection({
             </motion.div>
           </div>
 
-          {/* Visual Hero Showcase Column (Matched Height + Scroll Parallax) */}
+          {/* Visual Hero Showcase Column */}
           <motion.div
             initial={{ opacity: 0, scale: 0.96 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -208,52 +219,120 @@ export function HeroSection({
           >
             <motion.div
               style={{ opacity: frameOpacity }}
-              className="relative w-full min-h-[440px] lg:min-h-[560px] lg:h-full rounded-2xl overflow-hidden border border-zinc-800 bg-zinc-900 group"
+              className="relative w-full min-h-[440px] lg:min-h-[540px] lg:h-full rounded-2xl overflow-hidden border border-zinc-800 bg-[#0A0A0D] group flex flex-col justify-between"
             >
-              <motion.img
-                src={profile.heroImageUrl}
-                alt={lang === 'ar' ? profile.nameAr : profile.nameEn}
-                referrerPolicy="no-referrer"
-                style={{ y: imageY, scale: imageScale }}
-                className="w-full h-full object-cover object-top will-change-transform"
-              />
+              {profile.heroImageUrl ? (
+                <>
+                  <motion.img
+                    src={profile.heroImageUrl}
+                    alt={lang === 'ar' ? profile.nameAr : profile.nameEn}
+                    referrerPolicy="no-referrer"
+                    style={{ y: imageY, scale: imageScale }}
+                    className="w-full h-full object-cover object-top will-change-transform absolute inset-0"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/15 to-transparent pointer-events-none" />
+                </>
+              ) : (
+                <div className="relative flex-1 flex flex-col items-center justify-center p-8 text-center">
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 40, repeat: Infinity, ease: 'linear' }}
+                    className="w-36 h-36 rounded-full border border-dashed border-[#E5B84B]/35 flex items-center justify-center mb-6"
+                  >
+                    <div className="w-24 h-24 rounded-full border border-zinc-700 flex items-center justify-center bg-zinc-900/80">
+                      <Camera className="w-9 h-9 text-[#E5B84B]" />
+                    </div>
+                  </motion.div>
 
-              {/* Measured Gradient Contrast Scrim */}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/15 to-transparent pointer-events-none" />
+                  <p className="font-display text-2xl sm:text-3xl text-[#FAFAFA] mb-2">
+                    {lang === 'ar' ? profile.nameAr : profile.nameEn}
+                  </p>
+                  <p className="font-mono-tech text-xs text-[#E5B84B] mb-5">
+                    {profile.handle}
+                  </p>
 
-              {/* Viewfinder Corner Reticles (Architectural Motion Accent) */}
+                  <div className="flex flex-wrap items-center justify-center gap-3">
+                    {isAdmin && onQuickUploadHero ? (
+                      <label className="inline-flex items-center gap-2 px-5 py-2.5 text-xs font-semibold bg-[#E5B84B] text-[#050505] rounded-xl hover:bg-[#f0c762] transition-colors cursor-pointer">
+                        <Upload className="w-4 h-4" />
+                        <span>
+                          {lang === 'ar'
+                            ? 'رفع صورة هبة الرئيسية الآن'
+                            : 'Upload Heba’s Hero Photo'}
+                        </span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="sr-only"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) onQuickUploadHero(file);
+                          }}
+                        />
+                      </label>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={onOpenAdmin}
+                        className="inline-flex items-center gap-2 px-5 py-2.5 text-xs font-semibold bg-[#E5B84B] text-[#050505] rounded-xl hover:bg-[#f0c762] transition-colors cursor-pointer"
+                      >
+                        <Upload className="w-4 h-4" />
+                        <span>
+                          {lang === 'ar'
+                            ? 'رفع الصورة الرئيسية من الأدمن'
+                            : 'Upload Hero Photo via Admin'}
+                        </span>
+                      </button>
+                    )}
+
+                    <a
+                      href={profile.instagramUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-medium border border-zinc-700 text-zinc-200 rounded-xl hover:border-[#E5B84B] transition-colors"
+                    >
+                      <Instagram className="w-3.5 h-3.5" />
+                      <span>{lang === 'ar' ? 'حساب إنستجرام' : 'Instagram'}</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                </div>
+              )}
+
+              {/* Viewfinder Corner Reticles */}
               <div className="absolute top-4 left-4 w-5 h-5 border-t border-l border-[#E5B84B]/70 pointer-events-none" />
               <div className="absolute top-4 right-4 w-5 h-5 border-t border-r border-[#E5B84B]/70 pointer-events-none" />
               <div className="absolute bottom-4 left-4 w-5 h-5 border-b border-l border-[#E5B84B]/70 pointer-events-none" />
               <div className="absolute bottom-4 right-4 w-5 h-5 border-b border-r border-[#E5B84B]/70 pointer-events-none" />
 
-              {/* Bottom Caption Metadata */}
-              <div className="absolute inset-x-0 bottom-0 p-6 flex items-end justify-between gap-4">
-                <div>
-                  <p className="font-mono-tech text-xs text-[#E5B84B] tracking-wider">
-                    {profile.handle}
-                  </p>
-                  <p className="text-sm font-medium text-zinc-100 mt-1">
-                    {lang === 'ar' ? profile.taglineAr : profile.taglineEn}
-                  </p>
-                </div>
+              {profile.heroImageUrl && (
+                <div className="relative mt-auto p-6 flex items-end justify-between gap-4 z-10">
+                  <div>
+                    <p className="font-mono-tech text-xs text-[#E5B84B] tracking-wider">
+                      {profile.handle}
+                    </p>
+                    <p className="text-sm font-medium text-zinc-100 mt-1">
+                      {lang === 'ar' ? profile.taglineAr : profile.taglineEn}
+                    </p>
+                  </div>
 
-                {isAdmin && onQuickUploadHero && (
-                  <label className="inline-flex items-center gap-2 px-3 py-2 text-xs font-medium bg-zinc-950/90 text-[#E5B84B] border border-[#E5B84B]/40 rounded-lg hover:bg-[#E5B84B] hover:text-[#050505] transition-colors cursor-pointer shrink-0">
-                    <Upload className="w-3.5 h-3.5" />
-                    <span>{lang === 'ar' ? 'تغيير الصورة' : 'Swap Hero'}</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="sr-only"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) onQuickUploadHero(file);
-                      }}
-                    />
-                  </label>
-                )}
-              </div>
+                  {isAdmin && onQuickUploadHero && (
+                    <label className="inline-flex items-center gap-2 px-3 py-2 text-xs font-medium bg-zinc-950/90 text-[#E5B84B] border border-[#E5B84B]/40 rounded-lg hover:bg-[#E5B84B] hover:text-[#050505] transition-colors cursor-pointer shrink-0">
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>{lang === 'ar' ? 'تغيير الصورة' : 'Swap Hero'}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="sr-only"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) onQuickUploadHero(file);
+                        }}
+                      />
+                    </label>
+                  )}
+                </div>
+              )}
             </motion.div>
           </motion.div>
         </div>
@@ -272,7 +351,7 @@ export function HeroSection({
                 {balanceStats.photos}
               </p>
               <p className="text-xs text-zinc-400 mt-0.5">
-                {lang === 'ar' ? 'جلسات تصوير فوتوغرافي' : 'Curated Photo Sessions'}
+                {lang === 'ar' ? 'جلسات تصوير فوتوغرافي' : 'Photo Sessions'}
               </p>
             </div>
           </div>

@@ -9,6 +9,7 @@ import {
   X,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
+import { parseSocialEmbedUrl } from '../lib/instagram';
 import type { Language, PortfolioSession } from '../types/portfolio';
 
 interface SessionLightboxProps {
@@ -17,15 +18,19 @@ interface SessionLightboxProps {
   onClose: () => void;
 }
 
-function getEmbedUrl(url: string): { type: 'mp4' | 'youtube' | 'vimeo' | 'reel'; src: string } {
+function getVideoSource(
+  url: string
+): { type: 'mp4' | 'youtube' | 'vimeo' | 'social' | 'none'; src: string } {
   const clean = url.trim();
-  if (!clean) return { type: 'reel', src: '' };
+  if (!clean) return { type: 'none', src: '' };
 
   if (/\.(mp4|webm|mov)(\?.*)?$/i.test(clean) || clean.startsWith('data:video/')) {
     return { type: 'mp4', src: clean };
   }
 
-  const ytMatch = clean.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{6,})/);
+  const ytMatch = clean.match(
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{6,})/
+  );
   if (ytMatch) {
     return { type: 'youtube', src: `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1` };
   }
@@ -35,7 +40,12 @@ function getEmbedUrl(url: string): { type: 'mp4' | 'youtube' | 'vimeo' | 'reel';
     return { type: 'vimeo', src: `https://player.vimeo.com/video/${vimeoMatch[1]}?autoplay=1` };
   }
 
-  return { type: 'reel', src: clean };
+  const social = parseSocialEmbedUrl(clean);
+  if (social) {
+    return { type: 'social', src: social.embedUrl };
+  }
+
+  return { type: 'none', src: '' };
 }
 
 export function SessionLightbox({ lang, session, onClose }: SessionLightboxProps) {
@@ -55,7 +65,6 @@ export function SessionLightbox({ lang, session, onClose }: SessionLightboxProps
     setReelProgress(0);
   }, [session?.id]);
 
-  // ESC & arrow key controls
   useEffect(() => {
     if (!session) return;
     const handleKey = (e: KeyboardEvent) => {
@@ -71,11 +80,14 @@ export function SessionLightbox({ lang, session, onClose }: SessionLightboxProps
     return () => window.removeEventListener('keydown', handleKey);
   }, [session, images.length, onClose]);
 
-  // Animated Ken-Burns cinema reel ticker when viewing an Instagram reel / showcase video
+  const videoInfo = useMemo(
+    () => getVideoSource(session?.videoUrl || session?.instagramPostUrl || ''),
+    [session?.videoUrl, session?.instagramPostUrl]
+  );
+
   useEffect(() => {
     if (!session || session.mediaType !== 'video' || !isPlayingReel) return;
-    const videoSource = getEmbedUrl(session.videoUrl);
-    if (videoSource.type !== 'reel') return;
+    if (videoInfo.type !== 'none') return;
 
     const timer = window.setInterval(() => {
       setReelProgress((prev) => {
@@ -89,11 +101,11 @@ export function SessionLightbox({ lang, session, onClose }: SessionLightboxProps
       });
     }, 100);
     return () => window.clearInterval(timer);
-  }, [session, isPlayingReel, images.length]);
+  }, [session, isPlayingReel, videoInfo.type, images.length]);
 
   if (!session) return null;
 
-  const videoInfo = getEmbedUrl(session.videoUrl);
+  const socialPostEmbed = parseSocialEmbedUrl(session.instagramPostUrl);
 
   return (
     <AnimatePresence>
@@ -113,7 +125,6 @@ export function SessionLightbox({ lang, session, onClose }: SessionLightboxProps
           onClick={(e) => e.stopPropagation()}
           className="relative w-full max-w-6xl bg-[#0B0B0D] border border-zinc-800 rounded-2xl overflow-hidden grid grid-cols-1 lg:grid-cols-12 max-h-[92vh]"
         >
-          {/* High-Contrast Close Button */}
           <button
             type="button"
             aria-label="Close lightbox"
@@ -124,11 +135,11 @@ export function SessionLightbox({ lang, session, onClose }: SessionLightboxProps
           </button>
 
           {/* Media Stage */}
-          <div className="lg:col-span-8 relative bg-black flex flex-col justify-center min-h-[340px] sm:min-h-[480px] lg:min-h-[600px] overflow-hidden">
+          <div className="lg:col-span-8 relative bg-black flex flex-col justify-center min-h-[360px] sm:min-h-[500px] lg:min-h-[600px] overflow-hidden">
             {session.mediaType === 'video' && videoInfo.type === 'mp4' ? (
               <video
                 src={videoInfo.src}
-                poster={session.coverImage}
+                poster={session.coverImage || undefined}
                 controls
                 autoPlay
                 playsInline
@@ -143,9 +154,15 @@ export function SessionLightbox({ lang, session, onClose }: SessionLightboxProps
                 allowFullScreen
                 className="w-full aspect-video max-h-[75vh] border-0"
               />
+            ) : (!images.length && socialPostEmbed) ||
+              (session.mediaType === 'video' && videoInfo.type === 'social') ? (
+              <iframe
+                src={(socialPostEmbed || { embedUrl: videoInfo.src }).embedUrl}
+                title={session.titleEn}
+                className="w-full h-full min-h-[520px] border-0 bg-white"
+              />
             ) : (
               <>
-                {/* Animated Photo / Cinema Reel Frame */}
                 <AnimatePresence mode="wait">
                   <motion.img
                     key={images[slideIndex]}
@@ -168,7 +185,6 @@ export function SessionLightbox({ lang, session, onClose }: SessionLightboxProps
                   />
                 </AnimatePresence>
 
-                {/* Cinema Reel Interactive Bar */}
                 {session.mediaType === 'video' && (
                   <div className="absolute inset-x-0 bottom-0 p-4 bg-gradient-to-t from-black/90 via-black/50 to-transparent flex items-center gap-3">
                     <button
@@ -189,12 +205,11 @@ export function SessionLightbox({ lang, session, onClose }: SessionLightboxProps
                       />
                     </div>
                     <span className="font-mono-tech text-xs text-zinc-200 shrink-0">
-                      {session.duration || '01:00'}
+                      {session.duration || 'Reel'}
                     </span>
                   </div>
                 )}
 
-                {/* Multi-photo arrows */}
                 {images.length > 1 && (
                   <>
                     <button
@@ -254,7 +269,6 @@ export function SessionLightbox({ lang, session, onClose }: SessionLightboxProps
                 {lang === 'ar' ? session.storyAr : session.storyEn}
               </p>
 
-              {/* Unboxed EXIF & Location Details */}
               <div className="pt-4 border-t border-zinc-800 space-y-2.5 text-xs">
                 <div className="flex justify-between gap-4">
                   <span className="text-zinc-500">{lang === 'ar' ? 'المكان' : 'Location'}</span>
@@ -270,7 +284,6 @@ export function SessionLightbox({ lang, session, onClose }: SessionLightboxProps
                 )}
               </div>
 
-              {/* Thumbnail Strip */}
               {images.length > 1 && (
                 <div className="pt-4 border-t border-zinc-800">
                   <p className="text-xs text-zinc-400 mb-2.5">
@@ -310,10 +323,21 @@ export function SessionLightbox({ lang, session, onClose }: SessionLightboxProps
                 rel="noopener noreferrer"
                 className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 text-xs font-semibold bg-[#E5B84B] text-[#050505] rounded-xl hover:bg-[#f0c762] transition-colors"
               >
-                <Instagram className="w-4 h-4" />
-                <span>
-                  {lang === 'ar' ? 'مشاهدة على إنستجرام @hebaelbasyouni1' : 'Open on Instagram @hebaelbasyouni1'}
-                </span>
+                {session.instagramPostUrl.includes('facebook.com') ? (
+                  <>
+                    <span className="font-bold text-sm leading-none">f</span>
+                    <span>
+                      {lang === 'ar' ? 'فتح البوست على فيسبوك' : 'Open Post on Facebook'}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <Instagram className="w-4 h-4" />
+                    <span>
+                      {lang === 'ar' ? 'فتح البوست على إنستجرام' : 'Open Post on Instagram'}
+                    </span>
+                  </>
+                )}
                 <ExternalLink className="w-3.5 h-3.5" />
               </a>
             )}

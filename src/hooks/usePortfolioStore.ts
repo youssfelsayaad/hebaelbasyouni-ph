@@ -5,6 +5,7 @@ import {
   deleteDoc,
   doc,
   getDoc,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
@@ -20,6 +21,7 @@ import {
   handleFirestoreError,
   OperationType,
 } from '../lib/firebase';
+import { parseSocialEmbedUrl } from '../lib/instagram';
 import {
   DEFAULT_STUDIO_PROFILE,
   INITIAL_PORTFOLIO_SESSIONS,
@@ -28,7 +30,9 @@ import type {
   AdminUserRecord,
   BookingInquiry,
   InquiryStatus,
+  MediaType,
   PortfolioSession,
+  SessionCategory,
   StudioProfile,
 } from '../types/portfolio';
 
@@ -92,8 +96,7 @@ export function usePortfolioStore() {
         }
       },
       (error) => {
-        // Keep initial sessions visible even if network fails temporarily, while reporting error
-        console.warn('Sessions listener fallback active:', error.message);
+        console.warn('Sessions listener status:', error.message);
       }
     );
     return () => unsub();
@@ -114,7 +117,7 @@ export function usePortfolioStore() {
         }
       },
       (error) => {
-        console.warn('Profile listener fallback active:', error.message);
+        console.warn('Profile listener status:', error.message);
       }
     );
     return () => unsub();
@@ -168,30 +171,105 @@ export function usePortfolioStore() {
     return { photos, videos, total, photoPct, videoPct };
   }, [sessions]);
 
-  async function seedInitialPortfolioToFirestore() {
+  async function bulkImportInstagramInput(
+    rawInput: string,
+    defaultCategory: SessionCategory = 'weddings'
+  ) {
     if (!user || !isAdmin) throw new Error('Admin authentication required');
+    const lines = Array.from(
+      new Set(
+        rawInput
+          .split(/\s+/)
+          .map((l) => l.trim())
+          .filter(Boolean)
+      )
+    );
+    const parsedItems = lines
+      .map((line) => parseSocialEmbedUrl(line))
+      .filter((item): item is NonNullable<typeof item> => Boolean(item))
+      .slice(0, 30);
+
+    if (parsedItems.length === 0) return 0;
+
     setSyncing(true);
     try {
       const batch = writeBatch(db);
-      INITIAL_PORTFOLIO_SESSIONS.forEach((item) => {
-        const ref = doc(db, 'sessions', item.id);
+      if (!hasFirestoreSessions) {
+        INITIAL_PORTFOLIO_SESSIONS.forEach((seed) => {
+          const seedRef = doc(db, 'sessions', seed.id);
+          batch.set(seedRef, {
+            ...seed,
+            galleryImages: seed.galleryImages.slice(0, 10),
+            authorUid: user.uid,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        });
+      }
+      const startIndex = sessions.length + 1;
+
+      parsedItems.forEach((item, idx) => {
+        const isVideo =
+          item.platform === 'facebook-video' || item.canonicalUrl.includes('/reel/');
+        const mediaType: MediaType = isVideo ? 'video' : 'photo';
+        const id = `social-${Date.now()}-${idx}`;
+        const ref = doc(db, 'sessions', id);
+
         batch.set(ref, {
-          ...item,
+          id,
+          titleAr: isVideo
+            ? `فيديو / ريل #${startIndex + idx}`
+            : `سيشن تصوير #${startIndex + idx}`,
+          titleEn: isVideo
+            ? `Video Reel #${startIndex + idx}`
+            : `Photo Session #${startIndex + idx}`,
+          mediaType,
+          category: isVideo ? 'reels' : defaultCategory,
+          coverImage: '',
+          galleryImages: [],
+          videoUrl: isVideo ? item.canonicalUrl : '',
+          duration: isVideo ? 'Reel' : '',
+          locationAr:
+            item.platform.startsWith('facebook')
+              ? 'فيسبوك · هبة البسيوني'
+              : 'إنستجرام @hebaelbasyouni1',
+          locationEn:
+            item.platform.startsWith('facebook')
+              ? 'Facebook · Heba El-Basyouni'
+              : 'Instagram @hebaelbasyouni1',
+          sessionDate: new Date().toISOString().slice(0, 7),
+          storyAr: 'عمل منشور على حساب هبة البسيوني الرسمي.',
+          storyEn: 'Published work from Heba El-Basyouni’s official social profile.',
+          cameraSpecs: '@hebaelbasyouni1',
+          instagramPostUrl: item.canonicalUrl,
+          aspectRatio: isVideo ? 'portrait' : 'landscape',
+          featured: idx < 2,
+          orderIndex: startIndex + idx,
           authorUid: user.uid,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
       });
 
-      const profileRef = doc(db, 'siteSettings', 'profile');
-      batch.set(profileRef, {
-        ...profile,
-        updatedAt: serverTimestamp(),
-      });
-
       await batch.commit();
+      return parsedItems.length;
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'sessions');
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  async function clearAllSessions() {
+    if (!user || !isAdmin) throw new Error('Admin authentication required');
+    setSyncing(true);
+    try {
+      const snap = await getDocs(collection(db, 'sessions'));
+      const batch = writeBatch(db);
+      snap.docs.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, 'sessions');
     } finally {
       setSyncing(false);
     }
@@ -206,7 +284,30 @@ export function usePortfolioStore() {
     const docRef = doc(db, 'sessions', cleanId);
 
     try {
-      if (isNew || !hasFirestoreSessions) {
+      if (!hasFirestoreSessions) {
+        const batch = writeBatch(db);
+        INITIAL_PORTFOLIO_SESSIONS.forEach((seed) => {
+          const item = seed.id === cleanId ? { ...sessionData, id: cleanId } : seed;
+          batch.set(doc(db, 'sessions', seed.id), {
+            ...item,
+            galleryImages: item.galleryImages.slice(0, 10),
+            authorUid: user.uid,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        });
+        if (isNew || !INITIAL_PORTFOLIO_SESSIONS.some((s) => s.id === cleanId)) {
+          batch.set(docRef, {
+            ...sessionData,
+            id: cleanId,
+            galleryImages: sessionData.galleryImages.slice(0, 10),
+            authorUid: user.uid,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        }
+        await batch.commit();
+      } else if (isNew) {
         await setDoc(docRef, {
           ...sessionData,
           id: cleanId,
@@ -250,7 +351,21 @@ export function usePortfolioStore() {
   async function deleteSession(sessionId: string) {
     if (!user || !isAdmin) throw new Error('Admin authentication required');
     try {
-      await deleteDoc(doc(db, 'sessions', sessionId));
+      if (!hasFirestoreSessions) {
+        const batch = writeBatch(db);
+        INITIAL_PORTFOLIO_SESSIONS.filter((s) => s.id !== sessionId).forEach((seed) => {
+          batch.set(doc(db, 'sessions', seed.id), {
+            ...seed,
+            galleryImages: seed.galleryImages.slice(0, 10),
+            authorUid: user.uid,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        });
+        await batch.commit();
+      } else {
+        await deleteDoc(doc(db, 'sessions', sessionId));
+      }
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `sessions/${sessionId}`);
     }
@@ -357,7 +472,8 @@ export function usePortfolioStore() {
     adminEmails,
     balanceStats,
     syncing,
-    seedInitialPortfolioToFirestore,
+    bulkImportInstagramInput,
+    clearAllSessions,
     saveSession,
     deleteSession,
     saveStudioProfile,

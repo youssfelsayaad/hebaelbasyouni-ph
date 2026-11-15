@@ -60,6 +60,7 @@ export default function App() {
     setActiveView(view);
     if (view === 'admin') {
       window.history.replaceState(null, '', '#admin');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } else {
       window.history.replaceState(null, '', '#top');
     }
@@ -75,7 +76,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#050505] text-[#FAFAFA] flex flex-col">
-      {/* Brief Non-Blocking Cinematic Shutter Entrance */}
       <AnimatePresence>
         {showOpeningShutter && (
           <motion.div
@@ -125,7 +125,8 @@ export default function App() {
             balanceStats={store.balanceStats}
             syncing={store.syncing}
             onBackToSite={() => handleSwitchView('home')}
-            onSeedFirestore={store.seedInitialPortfolioToFirestore}
+            onBulkImportInstagram={store.bulkImportInstagramInput}
+            onClearAllSessions={store.clearAllSessions}
             onSaveSession={store.saveSession}
             onDeleteSession={store.deleteSession}
             onSaveProfile={store.saveStudioProfile}
@@ -143,6 +144,7 @@ export default function App() {
               balanceStats={store.balanceStats}
               isAdmin={store.isAdmin}
               onQuickUploadHero={handleQuickUploadHero}
+              onOpenAdmin={() => handleSwitchView('admin')}
               onExploreGallery={() => {
                 setMediaFilter('all');
                 handleNavigateSection('gallery');
@@ -158,24 +160,31 @@ export default function App() {
             <CinemaShowcaseBand
               lang={lang}
               reels={videoReels}
+              instagramUrl={store.profile.instagramUrl}
+              facebookUrl={store.profile.facebookUrl}
               onSelectSession={setSelectedSession}
               onViewAllReels={() => {
                 setMediaFilter('video');
                 handleNavigateSection('gallery');
               }}
+              onOpenAdmin={() => handleSwitchView('admin')}
             />
 
             <PortfolioGallery
               lang={lang}
               sessions={store.sessions}
+              instagramUrl={store.profile.instagramUrl}
+              facebookUrl={store.profile.facebookUrl}
               mediaFilter={mediaFilter}
               onChangeMediaFilter={setMediaFilter}
               onSelectSession={setSelectedSession}
+              onOpenAdmin={() => handleSwitchView('admin')}
             />
 
             <InteractiveDeckSection
               lang={lang}
               sessions={store.sessions}
+              instagramUrl={store.profile.instagramUrl}
               onSelectSession={setSelectedSession}
             />
 
@@ -188,7 +197,6 @@ export default function App() {
         )}
       </main>
 
-      {/* Clean Editorial Footer */}
       <footer className="border-t border-zinc-800/80 bg-[#050505] py-8 px-5 sm:px-8">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-zinc-500">
           <div className="flex items-center gap-3">

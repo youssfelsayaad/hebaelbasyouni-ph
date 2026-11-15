@@ -57,7 +57,7 @@ service cloud.firestore {
         && data.titleEn is string && data.titleEn.size() >= 1 && data.titleEn.size() <= 140
         && data.mediaType in ['photo', 'video']
         && data.category in ['weddings', 'bridal', 'editorial', 'family', 'reels']
-        && data.coverImage is string && data.coverImage.size() >= 1 && data.coverImage.size() <= 600000
+        && data.coverImage is string && data.coverImage.size() <= 600000
         && data.galleryImages is list && data.galleryImages.size() <= 10
         && (data.galleryImages.size() == 0 || (data.galleryImages[0] is string && data.galleryImages[0].size() <= 600000))
         && data.videoUrl is string && data.videoUrl.size() <= 1000
@@ -100,7 +100,7 @@ service cloud.firestore {
         && data.facebookUrl is string && data.facebookUrl.size() <= 300
         && data.studioCityAr is string && data.studioCityAr.size() >= 1 && data.studioCityAr.size() <= 80
         && data.studioCityEn is string && data.studioCityEn.size() >= 1 && data.studioCityEn.size() <= 80
-        && data.heroImageUrl is string && data.heroImageUrl.size() >= 1 && data.heroImageUrl.size() <= 600000
+        && data.heroImageUrl is string && data.heroImageUrl.size() <= 600000
         && data.updatedAt is timestamp;
     }
 

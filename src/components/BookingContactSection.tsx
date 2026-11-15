@@ -30,11 +30,14 @@ export function BookingContactSection({
   const [errorMsg, setErrorMsg] = useState('');
 
   const cleanPhoneDigits = profile.studioPhone.replace(/[^\d]/g, '');
-  const whatsappUrl = `https://wa.me/${cleanPhoneDigits}?text=${encodeURIComponent(
-    lang === 'ar'
-      ? `مرحباً هبة، أرغب في حجز جلسة تصوير (${sessionType})`
-      : `Hi Heba, I would like to inquire about booking a ${sessionType} session.`
-  )}`;
+  const hasPhone = cleanPhoneDigits.length >= 6;
+  const whatsappUrl = hasPhone
+    ? `https://wa.me/${cleanPhoneDigits}?text=${encodeURIComponent(
+        lang === 'ar'
+          ? `مرحباً هبة، أرغب في حجز جلسة تصوير (${sessionType})`
+          : `Hi Heba, I would like to inquire about booking a ${sessionType} session.`
+      )}`
+    : '';
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -65,8 +68,8 @@ export function BookingContactSection({
     } catch {
       setErrorMsg(
         lang === 'ar'
-          ? 'تعذر حفظ الطلب حالياً، يمكنك التواصل مباشرة عبر واتساب أو الهاتف.'
-          : 'Could not save inquiry right now. Please message directly on WhatsApp or Instagram.'
+          ? 'تعذر حفظ الطلب حالياً، يمكنك التواصل مباشرة عبر إنستجرام.'
+          : 'Could not save inquiry right now. Please message directly on Instagram.'
       );
     } finally {
       setSubmitting(false);
@@ -96,8 +99,8 @@ export function BookingContactSection({
               </h2>
               <p className="text-sm text-zinc-400 mt-3 leading-relaxed">
                 {lang === 'ar'
-                  ? 'متاح الحجز لجلسات الزفاف، الخطوبة، العرايس، الإيديتوريال، والفيديو ريلز في القاهرة وجميع المحافظات.'
-                  : 'Available for weddings, bridal portraits, fashion editorials, and cinema reels across Cairo & destination venues.'}
+                  ? 'متاح الحجز لجلسات الزفاف، الخطوبة، العرايس، الإيديتوريال، والفيديو ريلز.'
+                  : 'Available for weddings, bridal portraits, fashion editorials, and cinema reels.'}
               </p>
             </div>
 
@@ -146,7 +149,7 @@ export function BookingContactSection({
                 </a>
               )}
 
-              {profile.studioPhone && (
+              {hasPhone && (
                 <div className="p-4 rounded-xl bg-zinc-900/70 border border-zinc-800 flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <Phone className="w-5 h-5 text-[#E5B84B]" />
@@ -197,8 +200,8 @@ export function BookingContactSection({
                 </h3>
                 <p className="text-sm text-zinc-400 max-w-md mx-auto">
                   {lang === 'ar'
-                    ? 'تم حفظ بياناتك في نظام الاستوديو وسنتواصل معك قريباً، أو يمكنك مراسلة هبة مباشرة الآن على واتساب.'
-                    : 'Your details are saved and we will reach out shortly, or message directly on WhatsApp.'}
+                    ? 'تم حفظ بياناتك في نظام الاستوديو وسنتواصل معك قريباً.'
+                    : 'Your details are saved and we will reach out shortly.'}
                 </p>
                 <div className="flex flex-wrap justify-center gap-3 pt-2">
                   <button
@@ -208,15 +211,17 @@ export function BookingContactSection({
                   >
                     {lang === 'ar' ? 'إرسال طلب آخر' : 'Send Another'}
                   </button>
-                  <a
-                    href={whatsappUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 px-5 py-2 text-xs font-semibold bg-[#E5B84B] text-[#050505] rounded-lg"
-                  >
-                    <MessageCircle className="w-4 h-4" />
-                    <span>{lang === 'ar' ? 'متابعة على واتساب' : 'Continue on WhatsApp'}</span>
-                  </a>
+                  {hasPhone && (
+                    <a
+                      href={whatsappUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 px-5 py-2 text-xs font-semibold bg-[#E5B84B] text-[#050505] rounded-lg"
+                    >
+                      <MessageCircle className="w-4 h-4" />
+                      <span>{lang === 'ar' ? 'متابعة على واتساب' : 'Continue on WhatsApp'}</span>
+                    </a>
+                  )}
                 </div>
               </div>
             ) : (
@@ -323,15 +328,17 @@ export function BookingContactSection({
                     </span>
                   </button>
 
-                  <a
-                    href={whatsappUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 px-5 py-3.5 text-sm font-medium bg-zinc-900 text-zinc-200 border border-zinc-800 rounded-xl hover:border-[#E5B84B] transition-colors"
-                  >
-                    <MessageCircle className="w-4 h-4 text-[#E5B84B]" />
-                    <span>{lang === 'ar' ? 'حجز فوري واتساب' : 'Direct WhatsApp'}</span>
-                  </a>
+                  {hasPhone && (
+                    <a
+                      href={whatsappUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 px-5 py-3.5 text-sm font-medium bg-zinc-900 text-zinc-200 border border-zinc-800 rounded-xl hover:border-[#E5B84B] transition-colors"
+                    >
+                      <MessageCircle className="w-4 h-4 text-[#E5B84B]" />
+                      <span>{lang === 'ar' ? 'حجز فوري واتساب' : 'Direct WhatsApp'}</span>
+                    </a>
+                  )}
                 </div>
               </form>
             )}

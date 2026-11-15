@@ -3,9 +3,9 @@ import {
   ArrowRight,
   Camera,
   Check,
-  Database,
   Edit3,
   Film,
+  Instagram,
   LogIn,
   LogOut,
   Plus,
@@ -24,6 +24,7 @@ import {
   signInWithGooglePopup,
   signOutAdmin,
 } from '../lib/firebase';
+import { parseSocialEmbedUrl } from '../lib/instagram';
 import type {
   AdminUserRecord,
   AspectRatio,
@@ -55,7 +56,8 @@ interface AdminDashboardProps {
   };
   syncing: boolean;
   onBackToSite: () => void;
-  onSeedFirestore: () => Promise<void>;
+  onBulkImportInstagram: (rawInput: string, category: SessionCategory) => Promise<number | undefined>;
+  onClearAllSessions: () => Promise<void>;
   onSaveSession: (
     data: Omit<PortfolioSession, 'authorUid' | 'createdAt' | 'updatedAt'>,
     isNew: boolean
@@ -70,14 +72,14 @@ interface AdminDashboardProps {
 
 type AdminTab = 'works' | 'profile' | 'inquiries' | 'admins';
 
-function createEmptySession(mediaType: MediaType, orderIndex: number, fallbackCover: string): PortfolioSession {
+function createEmptySession(mediaType: MediaType, orderIndex: number): PortfolioSession {
   return {
     id: `session-${mediaType}-${Date.now()}`,
     titleAr: '',
     titleEn: '',
     mediaType,
     category: mediaType === 'video' ? 'reels' : 'weddings',
-    coverImage: fallbackCover,
+    coverImage: '',
     galleryImages: [],
     videoUrl: '',
     duration: mediaType === 'video' ? '01:00' : '',
@@ -86,9 +88,9 @@ function createEmptySession(mediaType: MediaType, orderIndex: number, fallbackCo
     sessionDate: new Date().toISOString().slice(0, 7),
     storyAr: '',
     storyEn: '',
-    cameraSpecs: mediaType === 'video' ? 'Sony FX3 · 35mm f/1.4 · 4K' : 'Sony A7R V · 85mm f/1.4',
+    cameraSpecs: mediaType === 'video' ? 'Cinema Reel' : 'Photo Session',
     instagramPostUrl: 'https://www.instagram.com/hebaelbasyouni1/',
-    aspectRatio: mediaType === 'video' ? 'landscape' : 'portrait',
+    aspectRatio: mediaType === 'video' ? 'portrait' : 'landscape',
     featured: false,
     orderIndex,
     authorUid: 'admin',
@@ -101,14 +103,14 @@ export function AdminDashboard({
   authReady,
   isAdmin,
   sessions,
-  hasFirestoreSessions,
   profile,
   inquiries,
   adminEmails,
   balanceStats,
   syncing,
   onBackToSite,
-  onSeedFirestore,
+  onBulkImportInstagram,
+  onClearAllSessions,
   onSaveSession,
   onDeleteSession,
   onSaveProfile,
@@ -121,6 +123,9 @@ export function AdminDashboard({
   const [filterType, setFilterType] = useState<'all' | MediaType>('all');
   const [editingSession, setEditingSession] = useState<PortfolioSession | null>(null);
   const [isNewSession, setIsNewSession] = useState(false);
+  const [showBulkImport, setShowBulkImport] = useState(false);
+  const [bulkLinksText, setBulkLinksText] = useState('');
+  const [bulkCategory, setBulkCategory] = useState<SessionCategory>('weddings');
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
   const [authError, setAuthError] = useState('');
@@ -148,6 +153,40 @@ export function AdminDashboard({
           : lang === 'ar'
             ? 'تعذر تسجيل الدخول عبر جوجل.'
             : 'Google Sign-In failed.'
+      );
+    }
+  };
+
+  const detectedBulkItems = bulkLinksText
+    .split(/\s+/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((l) => parseSocialEmbedUrl(l))
+    .filter((item): item is NonNullable<typeof item> => Boolean(item));
+  const detectedPhotos = detectedBulkItems.filter(
+    (i) => i.platform !== 'facebook-video' && !i.canonicalUrl.includes('/reel/')
+  ).length;
+  const detectedReels = detectedBulkItems.length - detectedPhotos;
+
+  const handleBulkImportSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (detectedBulkItems.length === 0) {
+      showToast(
+        lang === 'ar'
+          ? 'يرجى لصق رابط بوست أو فيديو صحيح من فيسبوك أو إنستجرام.'
+          : 'Please paste valid Facebook or Instagram post/video URLs.'
+      );
+      return;
+    }
+
+    const imported = await onBulkImportInstagram(bulkLinksText, bulkCategory);
+    if (imported && imported > 0) {
+      setBulkLinksText('');
+      setShowBulkImport(false);
+      showToast(
+        lang === 'ar'
+          ? `تمت إضافة ${imported} منشور للمعرض بنجاح!`
+          : `Added ${imported} works to gallery!`
       );
     }
   };
@@ -201,13 +240,25 @@ export function AdminDashboard({
   const handleSaveSessionSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!editingSession) return;
+    const validSocial = parseSocialEmbedUrl(
+      editingSession.instagramPostUrl || editingSession.videoUrl
+    );
+    if (!editingSession.coverImage && !validSocial) {
+      showToast(
+        lang === 'ar'
+          ? 'ارفعي صورة غلاف أو أدخلي رابط منشور/فيديو من فيسبوك أو إنستجرام'
+          : 'Upload a cover image or enter a valid Facebook/Instagram post or video URL'
+      );
+      return;
+    }
+
     setSaving(true);
     try {
       await onSaveSession(
         {
           id: editingSession.id,
-          titleAr: editingSession.titleAr.trim() || editingSession.titleEn.trim(),
-          titleEn: editingSession.titleEn.trim() || editingSession.titleAr.trim(),
+          titleAr: editingSession.titleAr.trim() || editingSession.titleEn.trim() || 'جلسة تصوير',
+          titleEn: editingSession.titleEn.trim() || editingSession.titleAr.trim() || 'Session',
           mediaType: editingSession.mediaType,
           category: editingSession.category,
           coverImage: editingSession.coverImage,
@@ -217,8 +268,8 @@ export function AdminDashboard({
           locationAr: editingSession.locationAr.trim() || 'القاهرة',
           locationEn: editingSession.locationEn.trim() || 'Cairo',
           sessionDate: editingSession.sessionDate.trim() || '2026-11',
-          storyAr: editingSession.storyAr.trim() || editingSession.titleAr.trim(),
-          storyEn: editingSession.storyEn.trim() || editingSession.titleEn.trim(),
+          storyAr: editingSession.storyAr.trim() || editingSession.titleAr.trim() || 'عمل من إنستجرام',
+          storyEn: editingSession.storyEn.trim() || editingSession.titleEn.trim() || 'Instagram Work',
           cameraSpecs: editingSession.cameraSpecs.trim(),
           instagramPostUrl: editingSession.instagramPostUrl.trim(),
           aspectRatio: editingSession.aspectRatio,
@@ -296,8 +347,8 @@ export function AdminDashboard({
             </h1>
             <p className="text-sm text-zinc-400 mt-2 leading-relaxed">
               {lang === 'ar'
-                ? 'سجّلي الدخول بحساب جوجل المصرّح له لإضافة جلسات تصوير جديدة، رفع الفيديوهات، تعديل الصورة الرئيسية، وتحديث رقم الهاتف وروابط السوشيال.'
-                : 'Sign in with an authorized Google account to add photo sessions, publish video reels, swap the hero photo, and manage inquiries.'}
+                ? 'سجّلي الدخول بحساب جوجل لإضافة بوستات وريلز إنستجرام الحقيقية، رفع الصورة الرئيسية والسيشنات، وتعديل رقم الهاتف وروابط السوشيال.'
+                : 'Sign in with Google to import real Instagram posts & reels, upload sessions, swap the hero photo, and update contacts.'}
             </p>
           </div>
 
@@ -344,7 +395,6 @@ export function AdminDashboard({
   return (
     <section className="min-h-screen bg-[#050505] py-10 px-5 sm:px-8">
       <div className="max-w-7xl mx-auto space-y-8">
-        {/* Toast Banner */}
         {toast && (
           <div className="fixed bottom-6 end-6 z-50 px-5 py-3 rounded-xl bg-[#E5B84B] text-[#050505] text-xs font-semibold shadow-xl flex items-center gap-2">
             <Check className="w-4 h-4" />
@@ -382,52 +432,35 @@ export function AdminDashboard({
           </div>
         </div>
 
-        {/* Cloud Seed Banner when Firestore is still empty */}
-        {!hasFirestoreSessions && (
-          <div className="p-5 rounded-2xl bg-zinc-900/90 border border-[#E5B84B]/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h2 className="text-sm font-semibold text-[#FAFAFA]">
-                {lang === 'ar'
-                  ? 'حفظ الأعمال الـ 24 الافتراضية في قاعدة البيانات السحابية'
-                  : 'Sync Initial 24 Balanced Works to Cloud Database'}
-              </h2>
-              <p className="text-xs text-zinc-400 mt-1">
-                {lang === 'ar'
-                  ? 'اضغطي مرة واحدة لنقل الـ 12 سيشن تصوير و12 فيديو ريل إلى Firestore لتتمكني من تعديلها أو حذفها في أي وقت.'
-                  : 'Push the balanced 12 photo sessions & 12 video reels into Firestore so you can edit or delete any item permanently.'}
-              </p>
-            </div>
-            <button
-              type="button"
-              disabled={syncing}
-              onClick={async () => {
-                await onSeedFirestore();
-                showToast(lang === 'ar' ? 'تم حفظ 24 عمل في قاعدة البيانات!' : '24 works synced!');
-              }}
-              className="inline-flex items-center gap-2 px-5 py-2.5 text-xs font-semibold bg-[#E5B84B] text-[#050505] rounded-xl hover:bg-[#f0c762] shrink-0 cursor-pointer"
-            >
-              <Database className="w-4 h-4" />
-              <span>
-                {syncing
-                  ? lang === 'ar'
-                    ? 'جاري الحفظ...'
-                    : 'Syncing...'
-                  : lang === 'ar'
-                    ? 'مزامنة الـ 24 عمل الآن'
-                    : 'Sync 24 Works Now'}
-              </span>
-            </button>
-          </div>
-        )}
-
         {/* Navigation Tabs */}
         <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800 pb-4">
           {(
             [
-              { id: 'works', label: lang === 'ar' ? `السيشنات والفيديوهات (${balanceStats.total})` : `Sessions & Reels (${balanceStats.total})` },
-              { id: 'profile', label: lang === 'ar' ? 'الصورة الرئيسية وبيانات التواصل' : 'Hero Photo & Contact Links' },
-              { id: 'inquiries', label: lang === 'ar' ? `طلبات الحجز (${inquiries.length})` : `Inquiries (${inquiries.length})` },
-              { id: 'admins', label: lang === 'ar' ? 'صلاحيات الأدمن' : 'Admin Access' },
+              {
+                id: 'works',
+                label:
+                  lang === 'ar'
+                    ? `السيشنات والفيديوهات (${balanceStats.total})`
+                    : `Sessions & Reels (${balanceStats.total})`,
+              },
+              {
+                id: 'profile',
+                label:
+                  lang === 'ar'
+                    ? 'الصورة الرئيسية وبيانات التواصل'
+                    : 'Hero Photo & Contact Links',
+              },
+              {
+                id: 'inquiries',
+                label:
+                  lang === 'ar'
+                    ? `طلبات الحجز (${inquiries.length})`
+                    : `Inquiries (${inquiries.length})`,
+              },
+              {
+                id: 'admins',
+                label: lang === 'ar' ? 'صلاحيات الأدمن' : 'Admin Access',
+              },
             ] as const
           ).map((tab) => (
             <button
@@ -448,12 +481,100 @@ export function AdminDashboard({
         {/* TAB 1: SESSIONS & VIDEO REELS */}
         {activeTab === 'works' && (
           <div className="space-y-6">
+            {/* Optional Social Links Quick Import */}
+            <div className="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <Instagram className="w-5 h-5 text-[#E5B84B]" />
+                  <div>
+                    <h2 className="text-sm font-semibold text-[#FAFAFA]">
+                      {lang === 'ar'
+                        ? 'إضافة روابط بوستات أو فيديوهات من فيسبوك / إنستجرام'
+                        : 'Quick Add Facebook or Instagram Post / Video Links'}
+                    </h2>
+                    <p className="text-xs text-zinc-400">
+                      {lang === 'ar'
+                        ? 'الصقي روابط البوستات أو الريلز المباشرة (رابط في كل سطر) لإضافتها دفعة واحدة.'
+                        : 'Paste direct Facebook or Instagram post/reel URLs (one per line).'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowBulkImport((v) => !v)}
+                  className="px-3.5 py-1.5 text-xs font-medium bg-zinc-800 text-zinc-200 rounded-lg hover:text-[#E5B84B] cursor-pointer"
+                >
+                  {showBulkImport
+                    ? lang === 'ar'
+                      ? 'إغلاق'
+                      : 'Close'
+                    : lang === 'ar'
+                      ? 'لصق روابط سوشيال'
+                      : 'Paste Social Links'}
+                </button>
+              </div>
+
+              {showBulkImport && (
+                <form onSubmit={handleBulkImportSubmit} className="space-y-3">
+                  <textarea
+                    rows={4}
+                    dir="ltr"
+                    value={bulkLinksText}
+                    onChange={(e) => setBulkLinksText(e.target.value)}
+                    placeholder={`https://www.facebook.com/heba.elbasyuni/posts/...\nhttps://www.facebook.com/reel/...\nhttps://www.instagram.com/p/...`}
+                    className="w-full px-4 py-3 text-xs font-mono-tech bg-zinc-950 border border-zinc-800 rounded-xl text-zinc-200 focus:outline-none focus:border-[#E5B84B]"
+                  />
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <span className="text-xs text-zinc-400">
+                        {lang === 'ar' ? 'التصنيف الافتراضي:' : 'Default category:'}
+                      </span>
+                      <select
+                        value={bulkCategory}
+                        onChange={(e) => setBulkCategory(e.target.value as SessionCategory)}
+                        className="px-3 py-1.5 text-xs bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-200"
+                      >
+                        <option value="weddings">{lang === 'ar' ? 'أفراح وخطوبة' : 'Weddings'}</option>
+                        <option value="bridal">{lang === 'ar' ? 'بورتريه عرايس' : 'Bridal'}</option>
+                        <option value="editorial">{lang === 'ar' ? 'أزياء وإيديتوريال' : 'Editorial'}</option>
+                        <option value="family">{lang === 'ar' ? 'عائلي وأمومة' : 'Family'}</option>
+                      </select>
+
+                      {detectedBulkItems.length > 0 && (
+                        <span className="font-mono-tech text-xs text-[#E5B84B]">
+                          {lang === 'ar'
+                            ? `تم التعرف على: ${detectedPhotos} صور · ${detectedReels} فيديو`
+                            : `Detected: ${detectedPhotos} Photos · ${detectedReels} Videos`}
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={syncing}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 text-xs font-semibold bg-[#E5B84B] text-[#050505] rounded-xl hover:bg-[#f0c762] cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>
+                        {syncing
+                          ? lang === 'ar'
+                            ? 'جاري الحفظ...'
+                            : 'Saving...'
+                          : lang === 'ar'
+                            ? 'إضافة للمعرض'
+                            : 'Add to Gallery'}
+                      </span>
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+
             {/* Balance Summary + Add Buttons */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5">
-              <div className="lg:col-span-6 space-y-2">
+              <div className="lg:col-span-5 space-y-2">
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-zinc-200 font-medium">
-                    {lang === 'ar' ? 'توازن المحتوى الحالي' : 'Current Content Balance'}
+                    {lang === 'ar' ? 'توازن الصور والفيديو' : 'Photo & Video Balance'}
                   </span>
                   <span className="font-mono-tech text-[#E5B84B]">
                     {balanceStats.photos} Photos ({balanceStats.photoPct}%) · {balanceStats.videos} Videos ({balanceStats.videoPct}%)
@@ -467,38 +588,48 @@ export function AdminDashboard({
                 </div>
               </div>
 
-              <div className="lg:col-span-6 flex flex-wrap lg:justify-end gap-3">
+              <div className="lg:col-span-7 flex flex-wrap lg:justify-end gap-3">
                 <button
                   type="button"
                   onClick={() => {
                     setIsNewSession(true);
-                    setEditingSession(
-                      createEmptySession('photo', sessions.length + 1, profile.heroImageUrl)
-                    );
+                    setEditingSession(createEmptySession('photo', sessions.length + 1));
                   }}
                   className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-semibold bg-[#E5B84B] text-[#050505] rounded-xl hover:bg-[#f0c762] cursor-pointer"
                 >
                   <Plus className="w-4 h-4" />
-                  <span>{lang === 'ar' ? 'إضافة سيشن صور' : 'Add Photo Session'}</span>
+                  <span>{lang === 'ar' ? 'رفع سيشن صور' : 'Add Photo Session'}</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => {
                     setIsNewSession(true);
-                    setEditingSession(
-                      createEmptySession('video', sessions.length + 1, profile.heroImageUrl)
-                    );
+                    setEditingSession(createEmptySession('video', sessions.length + 1));
                   }}
                   className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-semibold bg-zinc-100 text-[#050505] rounded-xl hover:bg-white cursor-pointer"
                 >
                   <Film className="w-4 h-4" />
                   <span>{lang === 'ar' ? 'إضافة فيديو / ريل' : 'Add Video Reel'}</span>
                 </button>
+
+                {sessions.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await onClearAllSessions();
+                      showToast(lang === 'ar' ? 'تم مسح جميع الأعمال' : 'All sessions cleared');
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-medium bg-zinc-950 border border-rose-500/40 text-rose-400 rounded-xl hover:bg-rose-950/40 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>{lang === 'ar' ? 'مسح الكل' : 'Clear All'}</span>
+                  </button>
+                )}
               </div>
             </div>
 
-            {/* Session Editor Form Modal/Panel */}
+            {/* Session Editor Form */}
             {editingSession && (
               <form
                 onSubmit={handleSaveSessionSubmit}
@@ -599,7 +730,7 @@ export function AdminDashboard({
                       onChange={(e) =>
                         setEditingSession({ ...editingSession, titleAr: e.target.value })
                       }
-                      placeholder="مثال: سيشن زفاف فرح ومصطفى"
+                      placeholder="مثال: سيشن زفاف نور وكريم"
                       className="w-full px-3.5 py-2.5 text-sm bg-zinc-900 border border-zinc-800 rounded-xl text-zinc-100"
                     />
                   </div>
@@ -614,20 +745,28 @@ export function AdminDashboard({
                       onChange={(e) =>
                         setEditingSession({ ...editingSession, titleEn: e.target.value })
                       }
-                      placeholder="e.g. Farah & Mostafa Wedding"
+                      placeholder="e.g. Nour & Karim Wedding"
                       className="w-full px-3.5 py-2.5 text-sm bg-zinc-900 border border-zinc-800 rounded-xl text-zinc-100"
                     />
                   </div>
                 </div>
 
-                {/* Cover Upload or URL */}
+                {/* Cover Upload or Optional when Instagram Post URL is provided */}
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center p-4 rounded-xl bg-zinc-900/80 border border-zinc-800">
                   <div className="lg:col-span-3">
-                    <img
-                      src={editingSession.coverImage}
-                      alt="Cover preview"
-                      className="w-full h-32 object-cover rounded-lg border border-zinc-700"
-                    />
+                    {editingSession.coverImage ? (
+                      <img
+                        src={editingSession.coverImage}
+                        alt="Cover preview"
+                        className="w-full h-32 object-cover rounded-lg border border-zinc-700"
+                      />
+                    ) : (
+                      <div className="w-full h-32 rounded-lg border border-dashed border-zinc-700 flex items-center justify-center text-xs text-zinc-500 text-center p-2">
+                        {lang === 'ar'
+                          ? 'سيتم العرض عبر إنستجرام أو ارفعي غلافاً'
+                          : 'Instagram embed or upload cover'}
+                      </div>
+                    )}
                   </div>
                   <div className="lg:col-span-9 space-y-3">
                     <div className="flex flex-wrap items-center gap-3">
@@ -644,9 +783,15 @@ export function AdminDashboard({
                           }}
                         />
                       </label>
-                      <span className="text-xs text-zinc-500">
-                        {lang === 'ar' ? 'أو الصقي رابط الصورة مباشرة:' : 'Or paste direct image URL:'}
-                      </span>
+                      {editingSession.coverImage && (
+                        <button
+                          type="button"
+                          onClick={() => setEditingSession({ ...editingSession, coverImage: '' })}
+                          className="text-xs text-rose-400 hover:underline cursor-pointer"
+                        >
+                          {lang === 'ar' ? 'إزالة الغلاف' : 'Remove cover'}
+                        </button>
+                      )}
                     </div>
                     <input
                       type="text"
@@ -654,20 +799,20 @@ export function AdminDashboard({
                       onChange={(e) =>
                         setEditingSession({ ...editingSession, coverImage: e.target.value })
                       }
+                      placeholder={lang === 'ar' ? 'أو رابط صورة مباشر (اختياري مع رابط إنستجرام)' : 'Optional direct image URL'}
                       dir="ltr"
                       className="w-full px-3 py-2 text-xs font-mono-tech bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-300"
                     />
                   </div>
                 </div>
 
-                {/* Video Fields OR Multi-Photo Gallery Upload */}
                 {editingSession.mediaType === 'video' ? (
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div className="sm:col-span-2">
                       <label className="block text-xs text-zinc-400 mb-1.5">
                         {lang === 'ar'
-                          ? 'رابط الفيديو (MP4 / YouTube / Vimeo / Instagram Reel)'
-                          : 'Video URL (MP4 / YouTube / Vimeo / Instagram Reel)'}
+                          ? 'رابط الفيديو (Instagram Reel / YouTube / Vimeo / MP4)'
+                          : 'Video URL (Instagram Reel / YouTube / Vimeo / MP4)'}
                       </label>
                       <input
                         type="text"
@@ -677,7 +822,7 @@ export function AdminDashboard({
                         onChange={(e) =>
                           setEditingSession({ ...editingSession, videoUrl: e.target.value })
                         }
-                        placeholder="https://www.instagram.com/reel/... or https://.../video.mp4"
+                        placeholder="https://www.instagram.com/reel/..."
                         className="w-full px-3.5 py-2.5 text-sm bg-zinc-900 border border-zinc-800 rounded-xl text-zinc-100"
                       />
                     </div>
@@ -775,7 +920,7 @@ export function AdminDashboard({
                   </div>
                   <div>
                     <label className="block text-xs text-zinc-400 mb-1.5">
-                      {lang === 'ar' ? 'رابط البوست على إنستجرام' : 'Instagram Post URL'}
+                      {lang === 'ar' ? 'رابط البوست/الريل على إنستجرام' : 'Instagram Post / Reel URL'}
                     </label>
                     <input
                       type="url"
@@ -785,6 +930,7 @@ export function AdminDashboard({
                       onChange={(e) =>
                         setEditingSession({ ...editingSession, instagramPostUrl: e.target.value })
                       }
+                      placeholder="https://www.instagram.com/p/..."
                       className="w-full px-3.5 py-2.5 text-sm bg-zinc-900 border border-zinc-800 rounded-xl text-zinc-100"
                     />
                   </div>
@@ -852,7 +998,6 @@ export function AdminDashboard({
               </form>
             )}
 
-            {/* Quick Filter in Admin */}
             <div className="flex items-center gap-2">
               {(['all', 'photo', 'video'] as const).map((t) => (
                 <button
@@ -880,18 +1025,23 @@ export function AdminDashboard({
               ))}
             </div>
 
-            {/* Works Table / List */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {visibleSessions.map((item) => (
                 <div
                   key={item.id}
                   className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-4 flex gap-4 items-center"
                 >
-                  <img
-                    src={item.coverImage}
-                    alt={item.titleEn}
-                    className="w-20 h-20 rounded-lg object-cover shrink-0 border border-zinc-800"
-                  />
+                  {item.coverImage ? (
+                    <img
+                      src={item.coverImage}
+                      alt={item.titleEn}
+                      className="w-20 h-20 rounded-lg object-cover shrink-0 border border-zinc-800"
+                    />
+                  ) : (
+                    <div className="w-20 h-20 rounded-lg bg-zinc-950 border border-zinc-800 flex items-center justify-center shrink-0">
+                      <Instagram className="w-6 h-6 text-[#E5B84B]" />
+                    </div>
+                  )}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 text-xs font-mono-tech text-[#E5B84B]">
                       {item.mediaType === 'video' ? (
@@ -946,13 +1096,18 @@ export function AdminDashboard({
             onSubmit={handleSaveProfileSubmit}
             className="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-6 sm:p-8 space-y-6"
           >
-            {/* Hero Photo Upload Block */}
             <div className="flex flex-col sm:flex-row items-center gap-6 pb-6 border-b border-zinc-800">
-              <img
-                src={profileForm.heroImageUrl}
-                alt="Hero Preview"
-                className="w-36 h-44 object-cover rounded-xl border border-zinc-700 shrink-0"
-              />
+              {profileForm.heroImageUrl ? (
+                <img
+                  src={profileForm.heroImageUrl}
+                  alt="Hero Preview"
+                  className="w-36 h-44 object-cover rounded-xl border border-zinc-700 shrink-0"
+                />
+              ) : (
+                <div className="w-36 h-44 rounded-xl border border-dashed border-zinc-700 flex items-center justify-center text-xs text-zinc-500 text-center p-3 shrink-0">
+                  {lang === 'ar' ? 'لا توجد صورة رئيسية بعد' : 'No Hero Photo'}
+                </div>
+              )}
               <div className="space-y-3 flex-1">
                 <h2 className="text-lg font-semibold text-[#FAFAFA]">
                   {lang === 'ar' ? 'الصورة الرئيسية لواجهة الموقع (Hero Photo)' : 'Main Hero Portrait'}
@@ -962,31 +1117,43 @@ export function AdminDashboard({
                     ? 'ارفعي صورة هبة الشخصية مباشرة من جهازك ليتم ضغطها وحفظها في واجهة البورتفوليو فوراً.'
                     : 'Upload Heba’s portrait from your device to immediately update the main hero frame.'}
                 </p>
-                <label className="inline-flex items-center gap-2 px-5 py-2.5 text-xs font-semibold bg-[#E5B84B] text-[#050505] rounded-xl hover:bg-[#f0c762] cursor-pointer">
-                  <Upload className="w-4 h-4" />
-                  <span>{lang === 'ar' ? 'رفع وتعيين الصورة الرئيسية' : 'Upload & Set Hero Photo'}</span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="sr-only"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) void handleHeroUpload(f);
-                    }}
-                  />
-                </label>
+                <div className="flex flex-wrap items-center gap-3">
+                  <label className="inline-flex items-center gap-2 px-5 py-2.5 text-xs font-semibold bg-[#E5B84B] text-[#050505] rounded-xl hover:bg-[#f0c762] cursor-pointer">
+                    <Upload className="w-4 h-4" />
+                    <span>{lang === 'ar' ? 'رفع وتعيين الصورة الرئيسية' : 'Upload & Set Hero Photo'}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="sr-only"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) void handleHeroUpload(f);
+                      }}
+                    />
+                  </label>
+                  {profileForm.heroImageUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setProfileForm({ ...profileForm, heroImageUrl: '' })}
+                      className="text-xs text-rose-400 hover:underline cursor-pointer"
+                    >
+                      {lang === 'ar' ? 'مسح الصورة' : 'Clear Hero Photo'}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
                 <label className="block text-xs text-zinc-400 mb-1.5">
-                  {lang === 'ar' ? 'رقم الهاتف / واتساب' : 'Phone / WhatsApp'}
+                  {lang === 'ar' ? 'رقم الهاتف / واتساب (الموجود على إنستجرام)' : 'Phone / WhatsApp'}
                 </label>
                 <input
                   type="text"
                   dir="ltr"
                   maxLength={40}
+                  placeholder="+20 10..."
                   value={profileForm.studioPhone}
                   onChange={(e) =>
                     setProfileForm({ ...profileForm, studioPhone: e.target.value })
@@ -1011,12 +1178,13 @@ export function AdminDashboard({
               </div>
               <div>
                 <label className="block text-xs text-zinc-400 mb-1.5">
-                  {lang === 'ar' ? 'رابط فيسبوك' : 'Facebook URL'}
+                  {lang === 'ar' ? 'رابط فيسبوك (الموجود على إنستجرام)' : 'Facebook URL'}
                 </label>
                 <input
                   type="url"
                   dir="ltr"
                   maxLength={300}
+                  placeholder="https://www.facebook.com/..."
                   value={profileForm.facebookUrl}
                   onChange={(e) =>
                     setProfileForm({ ...profileForm, facebookUrl: e.target.value })

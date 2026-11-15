@@ -31,7 +31,7 @@
         },
         "coverImage": {
           "type": "string",
-          "minLength": 1,
+          "minLength": 0,
           "maxLength": 600000
         },
         "galleryImages": {
@@ -199,7 +199,7 @@
         },
         "heroImageUrl": {
           "type": "string",
-          "minLength": 1,
+          "minLength": 0,
           "maxLength": 600000
         },
         "updatedAt": {
