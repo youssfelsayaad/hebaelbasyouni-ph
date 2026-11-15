@@ -8,6 +8,7 @@ import { InteractiveDeckSection } from './components/InteractiveDeckSection';
 import { MarqueeRibbon } from './components/MarqueeRibbon';
 import { Navbar } from './components/Navbar';
 import { PortfolioGallery } from './components/PortfolioGallery';
+import { SeoHelmet } from './components/SeoHelmet';
 import { SessionLightbox } from './components/SessionLightbox';
 import { usePortfolioStore } from './hooks/usePortfolioStore';
 import { compressImageToDataUrl } from './lib/firebase';
@@ -76,6 +77,14 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#050505] text-[#FAFAFA] flex flex-col">
+      <SeoHelmet
+        lang={lang}
+        activeView={activeView}
+        mediaFilter={mediaFilter}
+        profile={store.profile}
+        selectedSession={selectedSession}
+        sessions={store.sessions}
+      />
       <AnimatePresence>
         {showOpeningShutter && (
           <motion.div
